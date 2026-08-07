@@ -15,7 +15,7 @@ import traceback
 from secrets import token_hex
 
 from dotenv import load_dotenv
-from flask import Flask, flash, jsonify, redirect, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, request, send_from_directory, session, url_for
 from flask_cors import CORS
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +40,8 @@ from database import init_db, seed_data
 from routes.vendor_routes import vendor_bp
 from routes.workflow_admin_routes import workflow_admin_bp
 
+
+BUILD_DIR = os.path.join(BASE_DIR, "build")
 
 app = Flask(__name__, template_folder="templates", static_folder="static", static_url_path="/static")
 app.config["UPLOAD_FOLDER"] = os.path.join(BASE_DIR, "static", "uploads")
@@ -98,6 +100,9 @@ def _is_port_open(host: str, port: int) -> bool:
 
 
 # Purpose: Implements the start frontend dev server backend behavior.
+# NOTE: This is a LOCAL DEV convenience only. It is gated behind RA_AUTO_START_FRONTEND
+# and never runs on Databricks Apps (single-process deployment), since that env var
+# should never be set to true in production.
 def _start_frontend_dev_server() -> subprocess.Popen | None:
     auto_start = (os.environ.get("RA_AUTO_START_FRONTEND") or "false").strip().lower()
     if auto_start not in {"1", "true", "yes", "on"}:
@@ -197,40 +202,43 @@ def _ensure_db():
     return None
 
 
-# Purpose: Implements the prefer frontend ui backend behavior.
-@app.before_request
-def _prefer_frontend_ui():
-    """
-    Keep a single UI source of truth: React frontend.
-    Non-API GET requests to backend pages are redirected to frontend routes.
-    """
-    if request.method != "GET":
-        return None
-
-    path = request.path or "/"
-    if path.startswith("/api/") or path.startswith("/static/"):
-        return None
-
-    # Avoid redirecting framework/browser utility requests
-    if path == "/favicon.ico":
-        return None
-
-    accept = (request.headers.get("Accept") or "").lower()
-    if "text/html" not in accept and "*/*" not in accept:
-        return None
-
-    frontend_base = (os.environ.get("FRONTEND_URL") or "http://localhost:3001").rstrip("/")
-    return redirect(f"{frontend_base}{path}", code=302)
-
-
 @app.get("/favicon.ico")
 def favicon():
     return ("", 204)
 
 
+# Purpose: Serve the built React frontend directly from Flask.
+# This replaces the old localhost:3001 redirect, which only works when a
+# separate `npm start` dev server is running alongside Flask. Databricks
+# Apps runs a single process, so the compiled React build (backend/build/,
+# produced via `npm run build`) must be served by Flask itself.
+@app.get("/")
+@app.get("/<path:path>")
+def serve_react(path: str = ""):
+    if path.startswith("api/") or path.startswith("static/"):
+        # Let API/static routes 404 normally instead of falling through to React.
+        return jsonify({"error": "Not found"}), 404
+
+    if not os.path.isdir(BUILD_DIR):
+        return (
+            "React build not found. Run `npm run build` in frontend/ and "
+            "copy the output into backend/build/.",
+            500,
+        )
+
+    full_path = os.path.join(BUILD_DIR, path)
+    if path and os.path.isfile(full_path):
+        return send_from_directory(BUILD_DIR, path)
+
+    return send_from_directory(BUILD_DIR, "index.html")
+
+
 if __name__ == "__main__":
-    host = (os.environ.get("FLASK_HOST") or "127.0.0.1").strip()
-    port = int(os.environ.get("PORT", "5000"))
+    # Databricks Apps injects DATABRICKS_APP_PORT and expects the app to bind
+    # to 0.0.0.0 so its internal proxy can route traffic in. FLASK_HOST/PORT
+    # are kept as overrides for local development.
+    host = (os.environ.get("FLASK_HOST") or "0.0.0.0").strip()
+    port = int(os.environ.get("DATABRICKS_APP_PORT") or os.environ.get("PORT", "5000"))
     debug = os.environ.get("FLASK_DEBUG", "").lower() == "true"
     try:
         init_db()
