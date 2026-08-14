@@ -1,0 +1,10 @@
+"""Vercel Python entrypoint for the Recruitment Assist Flask API."""
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+BACKEND = ROOT / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
+from app import app  # noqa: E402,F401
