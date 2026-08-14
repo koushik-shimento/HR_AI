@@ -9,7 +9,8 @@
     "setup:backend": "node scripts/setup-backend.js",
     "seed:backend": "node scripts/run-python.js backend/database/seed_mongo_data.py",
     "import:uploads": "node scripts/run-python.js backend/database/import_uploads_to_mongo.py",
-    "import:json": "node scripts/run-python.js backend/database/import_json_to_mongo.py"
+    "import:json": "node scripts/run-python.js backend/database/import_json_to_mongo.py",
+    "build": "npm --prefix frontend ci && npm --prefix frontend run build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
