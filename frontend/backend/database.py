@@ -29,13 +29,19 @@ LEGACY_DEFAULT_PROJECT_NAMES = ["Internal Bench"]
 
 # Purpose: Fetches mongo uri from storage or service context.
 def get_mongo_uri() -> str:
-    uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
+    # Vercel's MongoDB integration commonly exposes MONGODB_URL, while the
+    # application historically documented MONGODB_URI. Accept both names.
+    uri = (
+        os.environ.get("MONGODB_URI")
+        or os.environ.get("MONGODB_URL")
+        or os.environ.get("MONGO_URI")
+    )
     if not uri:
         legacy = os.environ.get("DATABASE_URL") or ""
         if legacy.startswith(("mongodb://", "mongodb+srv://")):
             uri = legacy
     if not uri:
-        raise RuntimeError("Set MONGODB_URI in the environment.")
+        raise RuntimeError("Set MONGODB_URI or MONGODB_URL in the environment.")
     return uri
 
 
@@ -59,6 +65,7 @@ def init_pool() -> None:
         _ensure_indexes()
         _sync_counters()
         backfill_workflow_defaults()
+        _migrate_legacy_user_passwords()
         _seed_default_users()
         ensure_default_client_and_backfill()
         refresh_dashboard_metrics()
@@ -325,6 +332,27 @@ def backfill_workflow_defaults(default_required_candidate_count: Optional[int] =
         "vendors_updated": vendor_modified,
         "assignments_updated": assignment_modified,
     }
+
+
+# Purpose: Detects password values already stored in a supported hash format.
+def _is_password_hash(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith(("scrypt:", "pbkdf2:", "argon2:"))
+
+
+def _migrate_legacy_user_passwords() -> int:
+    """Replace legacy plaintext user passwords with Werkzeug hashes."""
+    users = _database().users
+    migrated = 0
+    for row in users.find({}, {"_id": 1, "password": 1}):
+        password = row.get("password")
+        if not isinstance(password, str) or not password or _is_password_hash(password):
+            continue
+        result = users.update_one(
+            {"_id": row["_id"], "password": password},
+            {"$set": {"password": generate_password_hash(password)}},
+        )
+        migrated += int(result.modified_count or 0)
+    return migrated
 
 
 # Purpose: Implements the seed default users backend behavior.
