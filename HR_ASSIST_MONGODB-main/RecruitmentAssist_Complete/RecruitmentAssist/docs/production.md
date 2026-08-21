@@ -24,7 +24,7 @@ Vercel
 
 The React application and Flask API therefore share one public origin. The React API client deliberately uses relative paths (`/api/...`), so no production API URL is hard-coded in the browser bundle.
 
-The frontend currently declares a development-only CRA proxy to `http://127.0.0.1:5000`; that proxy is **not** the production routing mechanism. fileciteturn13file0L2-L6
+The frontend's CRA `proxy` setting points to `http://127.0.0.1:5000`; that setting is **development-only** and is not the production routing mechanism.
 
 ## Production contract
 
@@ -34,9 +34,9 @@ The frontend currently declares a development-only CRA proxy to `http://127.0.0.
 2. Every non-API path is rewritten to `/index.html`, allowing React Router paths such as `/jobs/1` to load the application.
 3. API requests must never fall through to the SPA rewrite.
 
-The Python function imports the Flask application from `backend/app.py`. fileciteturn10file0L2-L6
+The Python function imports the Flask application from `backend/app.py`.
 
-Flask registers `/api/dashboard` as an authenticated JSON endpoint. Its authentication decorator returns `{"error":"Unauthorized"}` with HTTP 401 when no valid session token is present. fileciteturn21file0L2-L6 fileciteturn22file0L2-L6
+Flask registers `/api/dashboard` as an authenticated JSON endpoint. Its authentication decorator returns `{"error":"Unauthorized"}` with HTTP 401 when no valid session token is present.
 
 ## Build contract
 
@@ -46,7 +46,7 @@ From the repository root:
 npm run build
 ```
 
-The root build script runs the frontend production build. Vercel publishes `frontend/build` as the static output while `/api/*` is handled by the Python function. fileciteturn12file0L2-L6
+The root build script runs the frontend production build. Vercel publishes `frontend/build` as the static output while `/api/*` is handled by the Python function.
 
 Required production environment variables must be configured in Vercel for the Flask process, including the MongoDB connection string and application secret. Do not commit `.env` values.
 
